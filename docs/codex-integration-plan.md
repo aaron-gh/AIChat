@@ -171,3 +171,19 @@ also failed and aborted with exit 134 and a pthread diagnostic. A clean full
 baseline therefore remains unverified and must be established in the supported
 GUI test environment before the Claude refactor. Retry output is saved locally
 at `/private/tmp/aichat-codex-baseline.txt`.
+
+## Implementation progress
+
+The first foundation change introduces a discovery protocol and shared snapshot
+in `providers/base.py`, moves existing Claude discovery to `providers/claude.py`,
+and routes `hub.collect` through it. Claude keys, sorting, cache hooks and
+ownership metadata remain compatible. `SessionInfo` now carries a provider and
+backend-aware identity; foreign sessions cannot resolve Claude transcript paths
+or desktop links.
+
+Focused validation: 207 tests passed across provider routing, sessions, terminal
+and Cowork discovery, last messages, activity, stores, groups, hidden sessions
+and titles. The full GUI suite remains subject to the baseline limitation above.
+This is the beginning of phase 2's Claude boundary, not completion of that phase:
+reader and turn routing, the controller, persistence migration and Codex support
+remain to be implemented. No Codex UI option is enabled yet.

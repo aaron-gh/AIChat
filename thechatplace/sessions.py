@@ -80,6 +80,14 @@ class SessionInfo:
     #: The Last message column (#146), "Claude: ..." or "You: ...", filled
     #: in by the snapshot only while that column is shown ("" otherwise).
     last_message: str = ""
+    #: Agent backend, separate from where a session was discovered. Existing
+    #: Claude keys stay unchanged so groups, hidden rows and titles survive.
+    provider: str = "claude"
+
+    @property
+    def identity(self) -> tuple[str, str]:
+        """Backend-aware identity for new controller state."""
+        return self.provider, self.cli_session_id or self.key
 
     @property
     def is_own(self) -> bool:
@@ -109,11 +117,11 @@ class SessionInfo:
 
     @property
     def can_open_in_claude(self) -> bool:
-        return bool(self.desktop_session_id)
+        return self.provider == "claude" and bool(self.desktop_session_id)
 
     def transcript_path(self) -> Optional[Path]:
         """Its transcript, or None when it isn't on disk (or has no cli id)."""
-        if not self.cli_session_id:
+        if self.provider != "claude" or not self.cli_session_id:
             return None
         root = self.claude_home / "projects" if self.claude_home is not None else None
         return platform_paths.transcript_path(self.cwd, self.cli_session_id, root)
@@ -123,7 +131,8 @@ class SessionInfo:
         where Claude Code puts it (no search of every project folder, as
         ``transcript_path`` does when that misses): this is asked of every
         session on every refresh of the list."""
-        if not self.cli_session_id or not platform_paths.is_safe_id(self.cli_session_id):
+        if (self.provider != "claude" or not self.cli_session_id
+                or not platform_paths.is_safe_id(self.cli_session_id)):
             return 0
         root = self.claude_home / "projects" if self.claude_home is not None else None
         try:
