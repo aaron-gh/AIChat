@@ -265,3 +265,36 @@ validated private cache copy, as suggested in that review.
 The registry is not wired into the window yet. Before activation, stale results
 must be excluded from live completion announcements and execution decisions;
 production RPC transport, capabilities and opt-in settings remain outstanding.
+
+## Managed transport checkpoint
+
+Added a managed read-only stdio connection for the background provider workers.
+The connection initializes once, serializes writes, matches concurrent responses
+by request ID, bounds frames/requests and closes all pending requests on timeout
+or protocol failure. Notifications are ignored in this read-only phase;
+unexpected server requests close the connection without approving any action.
+No start, resume, fork, inference or automatic replay methods are exposed.
+
+Native executable discovery and process lifecycle live in `platform_paths.py`.
+The child uses the existing process-tree owner, with no shell and no stderr
+payloads in public diagnostics. Close waits for cleanup already running on
+another worker. Discovery checks PATH and Mac Homebrew locations; desktop
+bundled copies are not automatically selected. Resolving npm installations and
+choosing a supported released minimum remain compatibility work.
+
+The development probe now uses this same transport. Its live Mac check passed
+initialization, reported ChatGPT account type and found five active chats and
+zero archived chats. It printed no conversation bodies, IDs or tokens and
+started no turn. This does not establish subscription execution or Windows
+compatibility.
+
+Independent review caught a deeply nested JSON frame that could terminate the
+reader before cleanup. It now fails closed, with a regression test. Follow-up
+review passed all 24 transport/launch tests with no blocking findings. The
+broader focused suite passed 142 tests. Production connection ownership and
+reconnect integration, subscription guards, capability routing and UI activation
+remain next steps. The feature branch also includes the latest upstream sign-in
+fix; the shipping branch itself was not modified.
+
+Final full-suite validation for this checkpoint: 1,443 passed, 69 skipped,
+process exited successfully. No UI or layout changes are part of this checkpoint.

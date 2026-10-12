@@ -2,92 +2,30 @@
 
 Print only aggregate counts and account type, never titles, thread IDs,
 messages or tokens. Use --codex for an executable outside the shell's PATH.
-This is a development probe, not the production transport (#184) (#171).
+Uses the managed read-only transport; never starts a turn (#184) (#171).
 """
 from __future__ import annotations
 
 import argparse
 import json
-import queue
-import shutil
-import subprocess
-import threading
-import time
+import sys
+from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
-class Probe:
-    def __init__(self, executable):
-        self.process = subprocess.Popen([executable, "app-server", "--listen", "stdio://"],
-                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                        stderr=subprocess.DEVNULL, text=True)
-        self.incoming = queue.Queue()
-        self.next_id = 0
-        threading.Thread(target=self._read, daemon=True).start()
-
-    def _read(self):
-        try:
-            for line in self.process.stdout:
-                self.incoming.put(json.loads(line))
-        except (ValueError, OSError):
-            pass
-        finally:
-            self.incoming.put(None)
-
-    def send(self, message):
-        self.process.stdin.write(json.dumps(message) + "\n")
-        self.process.stdin.flush()
-
-    def request(self, method, params):
-        self.next_id += 1
-        request_id = self.next_id
-        self.send({"id": request_id, "method": method, "params": params})
-        deadline = time.monotonic() + 20
-        while True:
-            try:
-                message = self.incoming.get(timeout=max(0, deadline - time.monotonic()))
-            except queue.Empty:
-                raise RuntimeError(f"{method}: timed out") from None
-            if message is None:
-                raise RuntimeError(f"{method}: app-server closed")
-            if "method" in message:
-                if "id" in message:
-                    # There must be no approval or tool request during this
-                    # read-only probe. Stop instead of answering it implicitly.
-                    raise RuntimeError(f"{method}: unexpected server request")
-                continue
-            if message.get("id") != request_id:
-                raise RuntimeError(f"{method}: unexpected response id")
-            if "error" in message:
-                raise RuntimeError(f"{method}: RPC failed")
-            result = message.get("result")
-            if not isinstance(result, dict):
-                raise RuntimeError(f"{method}: invalid result")
-            return result
-
-    def close(self):
-        if self.process.poll() is None:
-            self.process.terminate()
-        try:
-            self.process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait(timeout=5)
-        for stream in (self.process.stdin, self.process.stdout):
-            stream.close()
+from thechatplace import platform_paths  # noqa: E402
+from thechatplace.providers.codex_rpc import ReadOnlyCodexConnection  # noqa: E402
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--codex", default=shutil.which("codex"))
+    parser.add_argument("--codex", default=platform_paths.find_codex())
     args = parser.parse_args()
     if not args.codex:
         parser.error("Codex executable not found; pass --codex")
-    probe = Probe(args.codex)
+    probe = ReadOnlyCodexConnection(args.codex)
     try:
-        probe.request("initialize", {"clientInfo": {"name": "thechatplace_probe",
-                                                   "title": "The Chat Place development probe",
-                                                   "version": "1"}})
-        probe.send({"method": "initialized", "params": {}})
         account = probe.request("account/read", {"refreshToken": False}).get("account")
         summary = {"initialized": True,
                    "account_type": account.get("type") if isinstance(account, dict) else None}

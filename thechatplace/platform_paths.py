@@ -635,6 +635,93 @@ def claude_executable() -> Optional[str]:
     return find_claude().path
 
 
+def find_codex(which=None, native_candidates=None) -> Optional[str]:
+    """Find a native CLI; never invoke an npm shell shim (#184) (#171).
+
+    Desktop-bundled copies are deliberately not searched: their location and
+    version are controlled by another app. A configured native path can be
+    passed to start_codex_server after the user installs a supported CLI.
+    """
+    import shutil
+
+    found = (which or shutil.which)("codex")
+    if native_candidates is None:
+        native_candidates = ([Path("/opt/homebrew/bin/codex"), Path("/usr/local/bin/codex")]
+                             if sys.platform == "darwin" else [])
+    for candidate in ([found] if found else []) + list(native_candidates):
+        if _native_codex(str(candidate)):
+            return str(candidate)
+    return None
+
+
+def _native_codex(path: str) -> bool:
+    if path.lower().endswith(_SCRIPT_SUFFIXES):
+        return False
+    try:
+        with open(path, "rb") as stream:
+            header = stream.read(4)
+        native = (header.startswith(b"MZ") or header == b"\x7fELF"
+                  or header in (b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe",
+                                b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe",
+                                b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca",
+                                b"\xca\xfe\xba\xbf", b"\xbf\xba\xfe\xca"))
+        return native and os.access(path, os.X_OK)
+    except OSError:
+        return False
+
+
+class CodexServerProcess:
+    """Own the app-server process and its pipes, including forced cleanup."""
+    def __init__(self, process, tree):
+        import threading
+
+        self.process, self.tree = process, tree
+        self.stdin, self.stdout = process.stdin, process.stdout
+        self._lock = threading.Lock()
+        self._closed = False
+
+    def close(self):
+        import subprocess
+
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            # Kill the process group even if the parent has already exited;
+            # descendants must not keep pipe readers or the app alive.
+            try:
+                self.tree.kill()
+                self.process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                self.process.kill()
+                self.process.wait(timeout=5)
+            finally:
+                self.tree.close()
+                for stream in (self.stdin, self.stdout):
+                    if stream is not None:
+                        stream.close()
+
+
+def start_codex_server(executable: Optional[str] = None) -> CodexServerProcess:
+    """Start stdio without a shell, in the existing kill-on-close tree."""
+    import subprocess
+
+    executable = executable or find_codex()
+    if not executable or not _native_codex(executable):
+        raise OSError("A native Codex CLI executable is required")
+    tree = ProcessTree()
+    process = subprocess.Popen([executable, "app-server", "--listen", "stdio://"],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, **tree.popen_kwargs())
+    owned = CodexServerProcess(process, tree)
+    try:
+        tree.attach(process)
+    except Exception:
+        owned.close()
+        raise
+    return owned
+
+
 def find_tool(name: str, which=None) -> Optional[str]:
     """The ``git`` or ``gh`` program (#154), or None. Only a real program:
     a ``.cmd`` or ``.bat`` would be run through cmd.exe, which re-reads its
