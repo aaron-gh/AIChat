@@ -248,3 +248,20 @@ skipped, process exited successfully. The independent reviewer also ran the
 33 focused adapter/search/controller tests successfully. No new dialogs or
 Codex controls are enabled. The Windows visual-probe gate remains part of the
 later UI phase; no screenshot comparison was performed for this checkpoint.
+
+The next discovery checkpoint adds a background-only `DiscoveryRegistry` that
+merges and sorts provider snapshots, preserves Claude ownership metadata, and
+retains private copies of the last successful results during an outage. Results
+identify stale providers and first failures so callers can report each outage
+once. Raw backend exception text is omitted from UI diagnostics.
+
+Independent review caught malformed metadata being cached before merge/sort
+validation. Validation now precedes cache replacement, with regression cases
+for every sort order and malformed merge fields. Focused validation: 139 tests
+passed across discovery, provider routing and Claude/Codex session adapters.
+The follow-up independent review found no remaining blockers and passed all
+57 discovery tests. Successful results and fallback results use the same
+validated private cache copy, as suggested in that review.
+The registry is not wired into the window yet. Before activation, stale results
+must be excluded from live completion announcements and execution decisions;
+production RPC transport, capabilities and opt-in settings remain outstanding.

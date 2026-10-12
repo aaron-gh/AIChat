@@ -19,6 +19,11 @@ class Snapshot:
     live: Dict[str, LiveStatus] = field(default_factory=dict)
     unreadable_files: int = 0
     desktop_groups: DesktopGroups = field(default_factory=DesktopGroups)
+    # Cached discovery is still useful when one backend is unavailable, but
+    # callers must distinguish it from fresh live state (#184) (#171).
+    stale_providers: Set[str] = field(default_factory=set)
+    provider_errors: Dict[str, str] = field(default_factory=dict)
+    newly_failed_providers: Set[str] = field(default_factory=set)
 
 
 class SessionProvider(Protocol):
