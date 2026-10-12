@@ -185,6 +185,8 @@ class MainFrame(wx.Frame):
         super().__init__(None, title=APP_NAME, size=_fitting_size(1000, 720))
         self.store = store or OwnSessionStore()
         self.sessions = sessions or SessionController([ClaudeConversations()])
+        self._provider_cleanup = None
+        self._provider_cleanup_failed = False
         self.groups = GroupStore()
         self.prompts = PromptStore()  # saved prompts (#131)
         self.hidden = HiddenStore()
@@ -5245,7 +5247,29 @@ class MainFrame(wx.Frame):
         speaker.on_problem = None
         self._notifier.close()  # its icon would keep the app running
         self._pool.shutdown(wait=False, cancel_futures=True)
+        self._close_providers()
         event.Skip()
+
+    def _close_providers(self):
+        """Keep backend cleanup alive after wx exits, without blocking it.
+
+        A dedicated worker cannot be cancelled along with queued history reads.
+        It never calls wx or schedules a callback to the closing window
+        (#184) (#171).
+        """
+        if self._provider_cleanup is not None:
+            return
+        controller = self.sessions
+
+        def close():
+            try:
+                controller.close()
+            except Exception:  # noqa: BLE001 - controller already tried every backend
+                self._provider_cleanup_failed = True
+
+        self._provider_cleanup = threading.Thread(
+            target=close, name="provider-cleanup", daemon=False)
+        self._provider_cleanup.start()
 
     def _gone(self) -> bool:
         """True once the window is destroyed or being destroyed. A Mac

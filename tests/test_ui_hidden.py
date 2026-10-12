@@ -26,6 +26,69 @@ from fake_env import (FAKE_COMMANDS, FakeRunner, add_desktop, add_transcript,  #
                       now_ms, pump)
 
 
+def test_window_close_starts_provider_cleanup_off_ui_thread(frame):
+    from thechatplace.session_controller import SessionController
+
+    entered, release = threading.Event(), threading.Event()
+    threads = []
+
+    class Backend:
+        provider_id = "codex"
+
+        def close(self):
+            threads.append(threading.current_thread())
+            entered.set()
+            assert release.wait(5)
+
+    class CloseEvent:
+        skipped = False
+
+        def CanVeto(self):
+            return False
+
+        def Skip(self):
+            self.skipped = True
+
+    frame.sessions = SessionController([Backend()])
+    event = CloseEvent()
+    try:
+        frame._on_close(event)
+        assert event.skipped
+        assert entered.wait(2)
+        assert threads == [frame._provider_cleanup]
+        assert threads[0] is not threading.current_thread()
+        assert not threads[0].daemon
+        frame._close_providers()
+        assert len(threads) == 1
+    finally:
+        release.set()
+        frame._provider_cleanup.join(5)
+    assert not frame._provider_cleanup.is_alive()
+    assert not frame._provider_cleanup_failed
+
+
+def test_provider_cleanup_failure_does_not_skip_other_backends(frame):
+    from thechatplace.session_controller import SessionController
+
+    closed = []
+
+    class Backend:
+        def __init__(self, provider_id):
+            self.provider_id = provider_id
+
+        def close(self):
+            closed.append(self.provider_id)
+            if self.provider_id == "codex":
+                raise RuntimeError("private backend diagnostic")
+
+    frame.sessions = SessionController([Backend("codex"), Backend("claude")])
+    frame._close_providers()
+    frame._provider_cleanup.join(5)
+    assert not frame._provider_cleanup.is_alive()
+    assert closed == ["codex", "claude"]
+    assert frame._provider_cleanup_failed
+
+
 def test_stale_provider_refresh_and_recovery_do_not_announce_finished_chat(frame, monkeypatch):
     from thechatplace.sessions import IDLE, WORKING, SessionInfo
     from thechatplace.ui import main_frame
@@ -749,6 +812,9 @@ def test_a_cancelled_quit_leaves_the_window_working(frame, env, fake_runner, mon
     frame._on_close(event)
     assert event.GetVeto() and not frame._closing
     assert not fake_runner.instances[0].cancelled
+    assert frame._provider_cleanup is None
+    # The synthetic runner has no transcript yet, but routing remains usable.
+    assert frame.sessions.has_history(frame._open) is False
 
 
 def test_store_write_failure_is_reported_and_send_state_still_updates(frame, env,

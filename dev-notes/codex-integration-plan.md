@@ -347,3 +347,16 @@ screenshots or visual-parity verdict are available. Issue #226 records the
 remaining Windows probe and screenshot review. The prior macOS packaging
 failure at disk-image detach passed on retry; both platform test jobs and
 Windows packaging passed for the published lifecycle checkpoint.
+
+## Window shutdown checkpoint
+
+Accepted window close now closes registered conversation backends on a dedicated
+worker. The worker survives wx exit and cannot be cancelled with queued history
+jobs; shutdown never blocks the UI thread. A vetoed close leaves the controller
+usable. Cleanup still attempts every backend after a failure.
+
+Independent review found no actionable defects. Validation passed both new
+hidden-window cleanup tests and 104 controller, transport and discovery tests.
+The published stale-state checkpoint passed both platform test and packaging
+jobs. No Codex option or layout change is enabled yet; Windows visual and
+hands-on accessibility checks remain tracked in issue #226.
