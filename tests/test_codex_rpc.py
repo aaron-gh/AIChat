@@ -230,7 +230,8 @@ def test_native_launch_uses_stdio_process_tree_and_cleans_up_attach_failure(tmp_
     def popen(argv, **kwargs):
         assert argv == [str(executable), "app-server", "--listen", "stdio://"]
         assert kwargs == dict(stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, creationflags=123)
+                              stderr=subprocess.DEVNULL, creationflags=123,
+                              env=platform_paths.codex_child_environment())
         return process
 
     monkeypatch.setattr(platform_paths, "ProcessTree", Tree)
@@ -443,3 +444,41 @@ def test_reconnect_can_proceed_after_previous_cleanup_eventually_succeeds():
     assert manager.request("thread/list", {}) == {"ok": True}
     assert len(created) == 1 and len(attempts) == 2
     manager.close()
+
+
+def test_codex_environment_removes_billing_overrides_without_mutating_parent():
+    overrides = {name: "synthetic" for name in platform_paths.CODEX_BILLING_VARS}
+    overrides.update({"OPENAI_API_KEY": "synthetic", "openai_base_url": "synthetic",
+                      "OPENAI_AUTH_TOKEN": "synthetic", "AZURE_OPENAI_ENDPOINT": "synthetic",
+                      "OPENAI_FUTURE_OVERRIDE": "synthetic"})
+    keep = {"PATH": "native", "HOME": "login", "CODEX_HOME": "profile", "LANG": "en_US.UTF-8"}
+    parent = dict(overrides, **keep)
+    assert platform_paths.codex_child_environment(parent) == keep
+    assert parent == dict(overrides, **keep)
+
+
+class FutureTurnConnection(ReadOnlyCodexConnection):
+    # Synthetic execution exercises the guard without enabling production turns.
+    METHODS = ReadOnlyCodexConnection.METHODS | {"turn/start", "turn/steer"}
+
+
+@pytest.mark.parametrize("kind", ["apiKey", "missing", "unknown", "chatgptAuthTokens",
+                                   "amazonBedrock", "other-provider"])
+@pytest.mark.parametrize("method", ["turn/start", "turn/steer"])
+def test_future_turn_rejects_non_chatgpt_account_before_sending(server, kind, method):
+    start, _ = server
+    with FutureTurnConnection("account-" + kind, start=start) as connection:
+        with pytest.raises(CodexRpcError, match="ChatGPT sign-in"):
+            connection.request(method, {"threadId": "synthetic"})
+        # Only initialize and account/read consumed IDs; no turn was written.
+        assert connection._next_id == 2
+
+
+def test_future_turn_checks_account_each_time_on_same_connection(server):
+    start, _ = server
+    with FutureTurnConnection("account-changed", start=start) as connection:
+        assert connection.request("turn/start", {"threadId": "synthetic"})["echo"] == {
+            "threadId": "synthetic"}
+        with pytest.raises(CodexRpcError, match="ChatGPT sign-in"):
+            connection.request("turn/start", {"threadId": "synthetic"})
+        assert connection._next_id == 4  # second turn never reaches the wire

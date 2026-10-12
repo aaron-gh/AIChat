@@ -702,6 +702,25 @@ class CodexServerProcess:
                         stream.close()
 
 
+CODEX_BILLING_VARS = frozenset({
+    "CODEX_API_KEY", "CODEX_BASE_URL", "CODEX_CHATGPT_BASE_URL",
+    "CODEX_AUTH_TOKEN", "CHATGPT_BASE_URL", "AZURE_API_KEY",
+})
+
+
+def codex_child_environment(environ=None) -> dict:
+    """Keep ChatGPT sign-in while dropping inherited billing/endpoint overrides.
+
+    Match case-insensitively because Windows environment names are insensitive.
+    Preserve PATH, HOME and CODEX_HOME so the native CLI can find its login
+    (#184) (#171). Configured providers still need validation before inference.
+    """
+    source = os.environ if environ is None else environ
+    return {key: value for key, value in source.items()
+            if key.upper() not in CODEX_BILLING_VARS
+            and not key.upper().startswith(("OPENAI_", "AZURE_OPENAI_"))}
+
+
 def start_codex_server(executable: Optional[str] = None) -> CodexServerProcess:
     """Start stdio without a shell, in the existing kill-on-close tree."""
     import subprocess
@@ -711,6 +730,7 @@ def start_codex_server(executable: Optional[str] = None) -> CodexServerProcess:
         raise OSError("A native Codex CLI executable is required")
     tree = ProcessTree()
     process = subprocess.Popen([executable, "app-server", "--listen", "stdio://"],
+                               env=codex_child_environment(),
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL, **tree.popen_kwargs())
     owned = CodexServerProcess(process, tree)

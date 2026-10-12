@@ -10,6 +10,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 lock = threading.Lock()
 pair = []
 initialized = False
+account_reads = 0
 
 
 def emit(message, partial=False):
@@ -44,6 +45,18 @@ for line in sys.stdin:
         emit({"id": request["id"], "error": {"message": "not initialized"}})
         continue
     params = request.get("params", {})
+    if method == "account/read" and len(sys.argv) > 1 and sys.argv[1].startswith("account-"):
+        account_reads += 1
+        kind = sys.argv[1][8:]
+        if kind == "changed":
+            kind = "chatgpt" if account_reads == 1 else "apiKey"
+        result = {"account": {"type": kind}, "requiresOpenaiAuth": True}
+        if kind == "missing":
+            result["account"] = None
+        if kind == "other-provider":
+            result = {"account": {"type": "chatgpt"}, "requiresOpenaiAuth": False}
+        emit({"id": request["id"], "result": result})
+        continue
     mode = params.get("mode")
     if mode == "hang":
         continue

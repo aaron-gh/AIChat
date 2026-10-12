@@ -95,6 +95,15 @@ class ReadOnlyCodexConnection:
     def _request(self, method, params):
         if not isinstance(params, dict):
             raise ValueError("Codex request parameters must be an object")
+        if method in ("turn/start", "turn/steer"):
+            # Guard the wire boundary even when execution is added to METHODS.
+            # Never cache this across turns or check a different connection:
+            # sign-in/provider state can change while the server stays alive.
+            account = self.request("account/read", {"refreshToken": True})
+            if (not isinstance(account.get("account"), dict)
+                    or account["account"].get("type") != "chatgpt"
+                    or account.get("requiresOpenaiAuth") is not True):
+                raise CodexRpcError("Codex turns require ChatGPT sign-in")
         pending = _Pending()
         with self._lock:
             if self._closed:

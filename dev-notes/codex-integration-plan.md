@@ -360,3 +360,24 @@ hidden-window cleanup tests and 104 controller, transport and discovery tests.
 The published stale-state checkpoint passed both platform test and packaging
 jobs. No Codex option or layout change is enabled yet; Windows visual and
 hands-on accessibility checks remain tracked in issue #226.
+
+## Billing safety review checkpoint
+
+The managed native Codex process now receives a copied environment with OpenAI,
+Azure OpenAI and named Codex credential/endpoint overrides removed. Login lookup
+variables remain intact. Parent environment variables are never modified.
+The wire boundary checks refreshed `account/read` on the same connection before
+any future turn/start or turn/steer request, requiring a ChatGPT account and an
+OpenAI-authenticated provider. Production methods remain read-only.
+
+Independent review passed all 47 transport tests with no actionable findings;
+the broader provider/controller/transport suite passed 70 tests. Before enabling
+execution, validate the target thread's provider and endpoint configuration as
+well: account metadata alone does not establish its billing route. This remains
+an execution acceptance gate, alongside ownership and subscription smoke checks.
+
+The earlier macOS disk-image failure passed on attempt 2 without build changes;
+PR #225 records the retry. Issue #226 explicitly blocks turning Codex on in the
+UI until every added/changed actual probe surface has light-100 and High Contrast
+captures, baseline comparison and independent review. It separately lists
+Kelly's focus, provider-name and screen-reader announcement hand checks.
