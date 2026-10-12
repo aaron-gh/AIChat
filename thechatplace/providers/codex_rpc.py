@@ -32,11 +32,13 @@ class ReadOnlyCodexConnection:
     MAX_REQUEST = 64 * 1024
     MAX_PENDING = 32
 
-    def __init__(self, executable=None, *, timeout=20.0, start=None):
+    def __init__(self, executable=None, *, timeout=20.0, start=None, initialize=True):
         if timeout <= 0:
             raise ValueError("Codex request timeout must be positive")
         self._timeout = timeout
         self._lock = threading.Lock()
+        self._initialize_lock = threading.Lock()
+        self._initialized = False
         self._pending: dict[int, _Pending] = {}
         self._next_id = 0
         self._closed = False
@@ -48,10 +50,31 @@ class ReadOnlyCodexConnection:
         self._writer = threading.Thread(target=self._write, daemon=True)
         self._reader.start()
         self._writer.start()
+        if initialize:
+            self.initialize()
+
+    @property
+    def closed(self) -> bool:
+        with self._lock:
+            return self._closed
+
+    def initialize(self):
+        """Allow the owner to register this process before the handshake.
+
+        Shutdown can then interrupt a blocked handshake instead of waiting
+        until the constructor returns to learn which process it owns.
+        """
+        with self._initialize_lock:
+            if self._initialized:
+                return
+            self._initialize()
+
+    def _initialize(self):
         try:
             self._request("initialize", {"clientInfo": {"name": "thechatplace",
                            "title": "The Chat Place", "version": __version__}})
             self._enqueue({"method": "initialized", "params": {}})
+            self._initialized = True
         except Exception:
             self.close()
             raise
@@ -65,6 +88,8 @@ class ReadOnlyCodexConnection:
     def request(self, method: str, params: dict) -> dict:
         if method not in self.METHODS:
             raise ValueError("Method is not supported by the read-only Codex connection")
+        if not self._initialized:
+            raise CodexRpcError("Codex connection is not initialized")
         return self._request(method, params)
 
     def _request(self, method, params):

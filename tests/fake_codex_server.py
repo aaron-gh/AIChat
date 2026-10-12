@@ -30,6 +30,8 @@ for line in sys.stdin:
     request = json.loads(line)
     method = request.get("method")
     if method == "initialize":
+        if len(sys.argv) > 1 and sys.argv[1] == "hang-init":
+            continue
         if len(sys.argv) > 1 and sys.argv[1] == "bad-init":
             emit({"id": request["id"], "error": {"message": "private init error"}})
             continue

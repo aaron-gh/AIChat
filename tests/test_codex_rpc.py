@@ -10,6 +10,7 @@ import pytest
 
 from thechatplace import platform_paths
 from thechatplace.providers.codex_rpc import CodexRpcError, ReadOnlyCodexConnection
+from thechatplace.providers.codex_connection import ManagedCodexConnection
 
 
 @pytest.fixture
@@ -243,3 +244,202 @@ def test_native_launch_uses_stdio_process_tree_and_cleans_up_attach_failure(tmp_
         child.close()
     assert calls == ["attach", "tree kill", ("wait", 5), "tree close"]
     assert process.stdin.closed and process.stdout.closed
+
+
+def test_deferred_initialization_rejects_reads_until_single_handshake(server):
+    start, _ = server
+    with ReadOnlyCodexConnection(start=start, initialize=False) as connection:
+        with pytest.raises(CodexRpcError, match="not initialized"):
+            connection.request("thread/list", {})
+        connection.initialize()
+        connection.initialize()
+        assert connection.request("thread/list", {}) == {"echo": {}}
+
+
+def test_managed_lazy_start_and_concurrent_requests_share_one_process(server):
+    start, owned = server
+    manager = ManagedCodexConnection(factory=lambda executable:
+                                    ReadOnlyCodexConnection(start=start, initialize=False))
+    assert owned == []
+    try:
+        with ThreadPoolExecutor(2) as pool:
+            one = pool.submit(manager.request, "thread/read", {"mode": "pair", "threadId": "one"})
+            two = pool.submit(manager.request, "thread/read", {"mode": "pair", "threadId": "two"})
+            assert one.result(timeout=5)["echo"]["threadId"] == "one"
+            assert two.result(timeout=5)["echo"]["threadId"] == "two"
+        assert len(owned) == 1
+    finally:
+        manager.close()
+    assert owned[0].process.poll() is not None
+
+
+def test_managed_reconnect_is_a_later_operation_not_a_replay(server):
+    start, owned = server
+    manager = ManagedCodexConnection(factory=lambda executable:
+                                    ReadOnlyCodexConnection(start=start, initialize=False))
+    try:
+        with pytest.raises(CodexRpcError, match="closed"):
+            manager.request("thread/read", {"mode": "exit"})
+        assert len(owned) == 1
+        assert manager.request("thread/list", {}) == {"echo": {}}
+        assert len(owned) == 2 and owned[0].process.poll() is not None
+        with pytest.raises(CodexRpcError, match="request failed"):
+            manager.request("thread/read", {"mode": "error"})
+        assert manager.request("thread/list", {}) == {"echo": {}}
+        assert len(owned) == 2  # an ordinary RPC error is not a disconnect
+    finally:
+        manager.close()
+
+
+def test_managed_close_cancels_handshake_without_waiting_for_rpc_timeout(server):
+    start, owned = server
+    handshake = threading.Event()
+
+    def factory(executable):
+        connection = ReadOnlyCodexConnection("hang-init", start=start, initialize=False)
+        encode = connection._encode
+
+        def encoded(message):
+            result = encode(message)
+            if message.get("method") == "initialize":
+                handshake.set()
+            return result
+
+        connection._encode = encoded
+        return connection
+
+    manager = ManagedCodexConnection(factory=factory)
+    with ThreadPoolExecutor(1) as pool:
+        read = pool.submit(manager.request, "thread/list", {})
+        assert handshake.wait(5)
+        manager.close()
+        with pytest.raises(CodexRpcError, match="closed"):
+            read.result(timeout=5)
+    assert owned[0].process.poll() is not None
+
+
+def test_close_waits_for_late_factory_and_disposes_result_before_return(server):
+    start, owned = server
+    entered, release = threading.Event(), threading.Event()
+
+    def factory(executable):
+        entered.set()
+        assert release.wait(5)
+        return ReadOnlyCodexConnection(start=start, initialize=False)
+
+    manager = ManagedCodexConnection(factory=factory)
+    with ThreadPoolExecutor(2) as pool:
+        read = pool.submit(manager.request, "thread/list", {})
+        assert entered.wait(5)
+        close = pool.submit(manager.close)
+        try:
+            with manager._condition:
+                assert manager._condition.wait_for(lambda: manager._closed, timeout=5)
+            assert not close.done()
+            with pytest.raises(CodexRpcError, match="backend closed"):
+                manager.request("thread/list", {})
+        finally:
+            release.set()
+        close.result(timeout=5)
+        with pytest.raises(CodexRpcError, match="backend closed"):
+            read.result(timeout=5)
+    assert len(owned) == 1 and owned[0].process.poll() is not None
+
+
+def test_close_before_first_read_and_invalid_methods_never_start_a_process(server):
+    start, owned = server
+    manager = ManagedCodexConnection(factory=lambda executable:
+                                    ReadOnlyCodexConnection(start=start, initialize=False))
+    with pytest.raises(ValueError, match="read-only"):
+        manager.request("turn/start", {})
+    with pytest.raises(ValueError, match="parameters"):
+        manager.request("thread/list", [])
+    assert owned == []
+    manager.close()
+    manager.close()
+    with pytest.raises(CodexRpcError, match="backend closed"):
+        manager.request("thread/list", {})
+    assert owned == []
+
+
+def test_late_factory_cleanup_failure_is_retained_and_reported_to_shutdown(server):
+    start, _ = server
+    entered, release = threading.Event(), threading.Event()
+
+    def factory(executable):
+        entered.set()
+        assert release.wait(5)
+        connection = ReadOnlyCodexConnection(start=start, initialize=False)
+        close = connection.close
+
+        def failed_close():
+            close()
+            raise RuntimeError("private cleanup details")
+
+        connection.close = failed_close
+        return connection
+
+    manager = ManagedCodexConnection(factory=factory)
+    with ThreadPoolExecutor(2) as pool:
+        read = pool.submit(manager.request, "thread/list", {})
+        assert entered.wait(5)
+        close = pool.submit(manager.close)
+        try:
+            with manager._condition:
+                assert manager._condition.wait_for(lambda: manager._closed, timeout=5)
+        finally:
+            release.set()
+        for future in (read, close):
+            with pytest.raises(CodexRpcError, match="^Codex backend cleanup failed$"):
+                future.result(timeout=5)
+    assert manager._connection is not None  # retain ownership for diagnosis
+    with pytest.raises(CodexRpcError, match="^Codex backend cleanup failed$"):
+        manager.close()
+
+
+def test_failed_previous_cleanup_retains_ownership_and_prevents_reconnect():
+    created, closed = [], []
+
+    def factory(executable):
+        created.append(True)
+        pytest.fail("Replacement started before previous cleanup succeeded")
+
+    def failed_close():
+        closed.append(True)
+        raise RuntimeError("private old-process cleanup details")
+
+    previous = SimpleNamespace(closed=True, close=failed_close)
+    manager = ManagedCodexConnection(factory=factory)
+    manager._connection = previous
+    for _ in range(2):
+        with pytest.raises(CodexRpcError, match="^Codex backend cleanup failed$"):
+            manager.request("thread/list", {})
+        assert manager._connection is previous
+    with pytest.raises(CodexRpcError, match="^Codex backend cleanup failed$"):
+        manager.close()
+    assert not created and len(closed) == 3
+
+
+def test_reconnect_can_proceed_after_previous_cleanup_eventually_succeeds():
+    attempts, created = [], []
+
+    def previous_close():
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise RuntimeError("private cleanup failure")
+
+    replacement = SimpleNamespace(closed=False, initialize=lambda: None,
+                                  request=lambda method, params: {"ok": True}, close=lambda: None)
+
+    def factory(executable):
+        created.append(True)
+        return replacement
+
+    manager = ManagedCodexConnection(factory=factory)
+    manager._connection = SimpleNamespace(closed=True, close=previous_close)
+    with pytest.raises(CodexRpcError, match="cleanup failed"):
+        manager.request("thread/list", {})
+    assert not created
+    assert manager.request("thread/list", {}) == {"ok": True}
+    assert len(created) == 1 and len(attempts) == 2
+    manager.close()

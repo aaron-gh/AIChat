@@ -298,3 +298,32 @@ fix; the shipping branch itself was not modified.
 
 Final full-suite validation for this checkpoint: 1,443 passed, 69 skipped,
 process exited successfully. No UI or layout changes are part of this checkpoint.
+
+## Connection ownership checkpoint
+
+Codex providers can now create a managed connection lazily, with no process
+startup in provider construction or reader creation. Concurrent discovery and
+history requests share one initialized server. Deferred initialization lets the
+owner cancel a blocked handshake during shutdown. A later read can reconnect
+after a failed process is cleaned up; the failed operation is never replayed.
+The session controller closes every registered backend, even if another
+backend's cleanup fails, and rejects operations after shutdown begins.
+
+Independent review caught cleanup failures losing ownership in late startup
+and in reconnects. Both now retain the connection and report a redacted failure;
+replacement startup is prevented until cleanup succeeds. Regression tests
+cover those failures, eventual recovery, shutdown during initialization and
+concurrent controller shutdown. Follow-up review passed all 113 focused
+lifecycle/discovery/provider/controller tests with no remaining blockers.
+Window shutdown wiring, capabilities, authentication guards and UI activation
+are still pending.
+
+Kelly authorized the best checks available on this Mac and requested a Windows
+handoff issue. [Issue #226](https://github.com/TheIdeaPlace/AIChat/issues/226)
+records CLI discovery, process cleanup, packaging, visual baseline and keyboard/
+screen-reader validation for an agent on Windows. Windows validation remains
+outstanding; it does not stop independent backend or Mac validation work.
+
+Final full-suite validation for connection ownership: 1,457 passed, 69 skipped,
+process exited successfully. No UI controls or layout changes are enabled by
+this checkpoint.

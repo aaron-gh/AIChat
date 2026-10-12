@@ -6,6 +6,7 @@ history access; reading a session must never resume it or start inference.
 from __future__ import annotations
 
 from typing import Iterable
+import threading
 
 from .providers.base import ConversationProvider, ConversationReader
 from .sessions import SessionInfo
@@ -14,6 +15,9 @@ from .transcript import Transcript
 
 class SessionController:
     def __init__(self, providers: Iterable[ConversationProvider]):
+        self._closed = False
+        self._close_lock = threading.Lock()
+        self._cleanup_failed = False
         self._providers: dict[str, ConversationProvider] = {}
         for provider in providers:
             if provider.provider_id in self._providers:
@@ -21,6 +25,8 @@ class SessionController:
             self._providers[provider.provider_id] = provider
 
     def _provider(self, session: SessionInfo) -> ConversationProvider:
+        if self._closed:
+            raise ValueError("Session controller closed")
         try:
             return self._providers[session.provider]
         except KeyError:
@@ -41,3 +47,18 @@ class SessionController:
 
     def last_reply(self, session: SessionInfo) -> str:
         return self._provider(session).last_reply(session)
+
+    def close(self):
+        """Close every registered backend even if one cleanup fails."""
+        with self._close_lock:
+            if not self._closed:
+                self._closed = True
+                for provider in self._providers.values():
+                    close = getattr(provider, "close", None)
+                    if close is not None:
+                        try:
+                            close()
+                        except Exception:  # noqa: BLE001 - clean up remaining providers
+                            self._cleanup_failed = True
+            if self._cleanup_failed:
+                raise RuntimeError("Session provider cleanup failed")

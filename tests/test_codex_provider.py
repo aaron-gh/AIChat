@@ -138,3 +138,25 @@ def test_controller_routes_codex_history_with_its_own_speaker():
     info = SessionInfo("external", "codex:one", "Build", "", "one", provider="codex")
     assert controller.has_history(info)
     assert controller.read(info).messages[-1].label == "Codex"
+
+
+def test_default_codex_provider_and_reader_do_not_start_a_process(monkeypatch):
+    from thechatplace import platform_paths
+
+    def unexpected(*args):
+        pytest.fail("Provider construction started a process")
+
+    monkeypatch.setattr(platform_paths, "start_codex_server", unexpected)
+    provider = CodexProvider()
+    info = SessionInfo("external", "codex:one", "Build", "", "one", provider="codex")
+    assert provider.has_history(info)
+    assert provider.open_reader(info).native_id == "one"
+    provider.close()
+
+
+def test_controller_close_reaches_codex_connection():
+    connection = Connection([])
+    closed = []
+    connection.close = lambda: closed.append(True)
+    SessionController([CodexProvider(connection)]).close()
+    assert closed == [True]

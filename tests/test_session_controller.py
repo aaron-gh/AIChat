@@ -1,4 +1,6 @@
 import pytest
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from thechatplace.providers.claude import ClaudeConversations
 from thechatplace.session_controller import SessionController
@@ -95,3 +97,59 @@ def test_claude_adapter_rejects_foreign_session_before_path_lookup(monkeypatch):
         provider.open_reader(info("codex"))
     with pytest.raises(ValueError, match="Not a Claude session"):
         provider.last_reply(info("codex"))
+
+
+def test_controller_shutdown_closes_every_backend_and_rejects_further_reads():
+    providers = [FakeProvider("claude", "a"), FakeProvider("codex", "b")]
+    closed = []
+    for provider in providers:
+        provider.close = lambda name=provider.provider_id: closed.append(name)
+    controller = SessionController(providers)
+    controller.close()
+    controller.close()
+    assert closed == ["claude", "codex"]
+    with pytest.raises(ValueError, match="controller closed"):
+        controller.read(info())
+
+
+def test_controller_cleanup_failure_does_not_skip_other_backend_or_expose_error():
+    claude, codex = FakeProvider("claude", "a"), FakeProvider("codex", "b")
+    closed = []
+
+    def failed_close():
+        closed.append("claude")
+        raise RuntimeError("private payload")
+
+    claude.close = failed_close
+    codex.close = lambda: closed.append("codex")
+    controller = SessionController([claude, codex])
+    with pytest.raises(RuntimeError, match="^Session provider cleanup failed$"):
+        controller.close()
+    assert closed == ["claude", "codex"]
+
+
+def test_concurrent_controller_close_waits_for_same_backend_cleanup():
+    provider = FakeProvider("claude", "reply")
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+
+    def close_provider():
+        calls.append("close")
+        entered.set()
+        assert release.wait(5)
+
+    provider.close = close_provider
+    controller = SessionController([provider])
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(controller.close)
+        assert entered.wait(5)
+        second = pool.submit(controller.close)
+        try:
+            assert not first.done() and not second.done()
+            with pytest.raises(ValueError, match="controller closed"):
+                controller.read(info())
+        finally:
+            release.set()
+        first.result(timeout=5)
+        second.result(timeout=5)
+    assert calls == ["close"]

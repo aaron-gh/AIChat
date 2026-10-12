@@ -12,6 +12,7 @@ from typing import Protocol
 from ..sessions import IDLE, NEEDS_YOU, WORKING, SessionInfo
 from ..transcript import ASSISTANT, ERROR, PLAN, TOOL, TOOL_RESULT, USER, ChatMessage, Transcript
 from .base import Snapshot
+from .codex_connection import ManagedCodexConnection
 
 
 class RpcConnection(Protocol):
@@ -174,8 +175,14 @@ class CodexReader:
 class CodexProvider:
     provider_id = "codex"
 
-    def __init__(self, connection: RpcConnection):
-        self.connection = connection
+    def __init__(self, connection: RpcConnection | None = None, *, executable=None):
+        self.connection = (connection if connection is not None
+                           else ManagedCodexConnection(executable))
+
+    def close(self):
+        close = getattr(self.connection, "close", None)
+        if close is not None:
+            close()
 
     def collect(self) -> Snapshot:
         sessions, ids = [], set()
