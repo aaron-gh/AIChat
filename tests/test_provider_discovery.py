@@ -3,7 +3,8 @@ import pytest
 from thechatplace.desktop_groups import DesktopGroups
 from thechatplace.providers.base import Snapshot
 from thechatplace.providers.discovery import DiscoveryRegistry
-from thechatplace.sessions import SessionInfo, SORT_NEWEST, SORT_VALUES
+from thechatplace.sessions import IDLE, NEEDS_YOU, WORKING, SessionInfo, SORT_NEWEST, SORT_VALUES
+from thechatplace.hub import finished_turns
 
 
 class Provider:
@@ -121,3 +122,38 @@ def test_bad_merge_fields_do_not_poison_cache(bad):
     assert [s.identity for s in result.sessions] == [("codex", "same")]
     assert result.unreadable_files == 0
     assert result.stale_providers == {"codex"}
+
+
+def test_stale_snapshot_cannot_complete_turns_or_carry_live_state_into_recovery():
+    claude, codex = session("claude"), session("codex")
+    claude.state = codex.state = WORKING
+    running = Snapshot(sessions=[claude, codex])
+    previous = running.fresh_states()
+    codex.state = IDLE
+    outage = Snapshot(sessions=[claude, codex], stale_providers={"codex"})
+    assert not finished_turns(previous, outage.sessions, stale_providers=outage.stale_providers)
+    assert outage.fresh_states() == {claude.key: WORKING}
+    recovered = Snapshot(sessions=[claude, codex])
+    assert not finished_turns(outage.fresh_states(), recovered.sessions)
+    # An outage on Claude is treated the same way, without affecting Codex.
+    claude.state, codex.state = IDLE, WORKING
+    stale_claude = Snapshot(sessions=[claude, codex], stale_providers={"claude"})
+    assert stale_claude.fresh_states() == {codex.key: WORKING}
+    assert not finished_turns(previous, stale_claude.sessions,
+                              stale_providers=stale_claude.stale_providers)
+
+
+@pytest.mark.parametrize("state", ["status unavailable", NEEDS_YOU, WORKING])
+def test_codex_unknown_or_waiting_state_is_not_a_finished_turn(state):
+    codex = session("codex")
+    codex.state = state
+    assert not finished_turns({codex.key: WORKING}, [codex])
+    snapshot = Snapshot(sessions=[codex])
+    assert (codex.key in snapshot.fresh_states()) == (state != "status unavailable")
+
+
+def test_fresh_codex_idle_can_complete_but_claude_waiting_keeps_existing_behavior():
+    codex, claude = session("codex"), session("claude")
+    claude.state = NEEDS_YOU
+    result = finished_turns({codex.key: WORKING, claude.key: WORKING}, [codex, claude])
+    assert result == [codex, claude]

@@ -822,7 +822,8 @@ class MainFrame(wx.Frame):
             try:
                 snap = collect(own, running, waiting=waiting, order=order,
                                last_messages=last_messages, background=background)
-                ended = finished_turns(self._previous_states, snap.sessions)
+                ended = finished_turns(self._previous_states, snap.sessions,
+                                       stale_providers=snap.stale_providers)
                 replies = {}
                 if not self._first_snapshot and self.speech.announce_all_sessions:
                     for info in ended:
@@ -851,7 +852,7 @@ class MainFrame(wx.Frame):
             return
         previous_desktop_groups = self._snapshot.desktop_groups
         self._snapshot = snap
-        self._previous_states = {s.key: s.state for s in snap.sessions}
+        self._previous_states = snap.fresh_states()
         # Hidden sessions (File, Hide Session) are out of everything here:
         # counts, announcements and notifications as well as the list.
         for info in snap.sessions:

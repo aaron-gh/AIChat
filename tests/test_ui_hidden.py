@@ -26,6 +26,30 @@ from fake_env import (FAKE_COMMANDS, FakeRunner, add_desktop, add_transcript,  #
                       now_ms, pump)
 
 
+def test_stale_provider_refresh_and_recovery_do_not_announce_finished_chat(frame, monkeypatch):
+    from thechatplace.sessions import IDLE, WORKING, SessionInfo
+    from thechatplace.ui import main_frame
+
+    settle(frame)
+    codex = SessionInfo("external", "codex:one", "Codex chat", "", "one",
+                        provider="codex", state=IDLE)
+    snapshots = [hub.Snapshot(sessions=[codex], stale_providers={"codex"}),
+                 hub.Snapshot(sessions=[codex])]
+    frame._previous_states = {codex.key: WORKING}
+    frame._first_snapshot = False
+    frame.speech.announce_all_sessions = True
+    replies = []
+    monkeypatch.setattr(main_frame, "collect", lambda *args, **kwargs: snapshots.pop(0))
+    monkeypatch.setattr(frame.sessions, "last_reply", lambda info: replies.append(info.key) or "Done")
+    frame.refresh_sessions()
+    assert pump(lambda: not frame._snapshot_busy)
+    assert codex.key not in frame._previous_states
+    frame.refresh_sessions()
+    assert pump(lambda: not frame._snapshot_busy)
+    assert frame._previous_states == {codex.key: IDLE}
+    assert replies == []
+
+
 def test_reader_factory_runs_off_ui_thread_and_preserves_backend_speaker(frame, monkeypatch):
     from thechatplace.transcript import ASSISTANT, ChatMessage, Transcript
     from thechatplace.session_controller import SessionController

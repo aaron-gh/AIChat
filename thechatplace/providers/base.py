@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Protocol, Set
 
 from ..desktop_groups import DesktopGroups
-from ..sessions import LiveStatus, SessionInfo
+from ..sessions import IDLE, NEEDS_YOU, WORKING, LiveStatus, SessionInfo
 from ..transcript import Transcript
 
 
@@ -24,6 +24,17 @@ class Snapshot:
     stale_providers: Set[str] = field(default_factory=set)
     provider_errors: Dict[str, str] = field(default_factory=dict)
     newly_failed_providers: Set[str] = field(default_factory=set)
+
+    def fresh_states(self) -> Dict[str, str]:
+        """Comparable states only; outages must not create finished turns.
+
+        Dropping unknown/stale states also prevents a recovery from comparing
+        idle with working remembered before the outage (#184) (#171).
+        """
+        return {session.key: session.state for session in self.sessions
+                if session.provider not in self.stale_providers
+                and (session.provider != "codex"
+                     or session.state in (IDLE, WORKING, NEEDS_YOU))}
 
 
 class SessionProvider(Protocol):

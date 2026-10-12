@@ -327,3 +327,23 @@ outstanding; it does not stop independent backend or Mac validation work.
 Final full-suite validation for connection ownership: 1,457 passed, 69 skipped,
 process exited successfully. No UI controls or layout changes are enabled by
 this checkpoint.
+
+## Stale discovery and recovery checkpoint
+
+Finished-turn detection now excludes stale provider snapshots. The window also
+drops stale or unknown Codex states from its comparison baseline, so recovery
+cannot announce a chat as finished from a state remembered before the outage.
+Codex must explicitly become idle; waiting for approval or unavailable status
+does not count as a finished turn. Existing Claude behavior is preserved.
+
+Independent review found no actionable defects and passed all 62 discovery
+tests. Broader validation passed 562 hidden-window/session/view tests with six
+platform skips; the additional end-to-end refresh/recovery regression passed
+separately. No mixed-list option is enabled by this checkpoint.
+
+The Mac visual probe was attempted for main-start, main-own, main-own-working
+and main-desktop, but native screen capture failed for all four windows. No
+screenshots or visual-parity verdict are available. Issue #226 records the
+remaining Windows probe and screenshot review. The prior macOS packaging
+failure at disk-image detach passed on retry; both platform test jobs and
+Windows packaging passed for the published lifecycle checkpoint.
