@@ -193,3 +193,20 @@ and titles. The subsequent full-suite run passed as recorded above.
 This is the beginning of phase 2's Claude boundary, not completion of that phase:
 reader and turn routing, the controller, persistence migration and Codex support
 remain to be implemented. No Codex UI option is enabled yet.
+
+October 12: added a window-independent `SessionController` and conversation
+provider/reader contracts. The main window now routes chat loading, unloaded
+session export, history for Properties, and background reply lookup through
+the controller. Claude's reader and bounded tail parsing live in its adapter.
+Unknown providers are rejected rather than falling back to Claude. Existing
+window layout, Claude wording and session keys are retained.
+
+Six new tests cover backend routing with colliding IDs, unavailable and duplicate
+providers, missing history, read-only Claude history access and rejection of
+foreign chats by the Claude adapter. Full-suite validation: 1,343 passed,
+69 skipped, exit code 0. Log: `/private/tmp/aichat-reader-routing.txt`.
+Remaining reader work includes cross-session Find, backend-neutral message
+labels and history availability checks; turn routing and Codex execution are
+still pending. The installed local CLI reports `0.162.0-alpha.17.2`; its
+app-server has stdio and schema-generation commands. Compatibility with a
+released CLI remains to be verified before selecting a supported minimum.

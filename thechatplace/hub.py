@@ -5,7 +5,6 @@ the UI applies on the main thread.
 """
 from __future__ import annotations
 
-import os
 import threading
 import time
 from pathlib import Path
@@ -13,11 +12,11 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from . import platform_paths
 from .providers.base import Snapshot
-from .providers.claude import ClaudeProvider
+from .providers.claude import ClaudeProvider, last_reply_from_tail  # noqa: F401
 from .own_store import OwnSession
 from .sessions import (SORT_STATUS, WORKING, SessionInfo, load_live_status,
                        sort_sessions)
-from .transcript import LastMessages, SessionFactsCache, TranscriptParser, split_jsonl
+from .transcript import LastMessages, SessionFactsCache
 # The row's words for it: plain text, no wx, so this stays plain data.
 from .ui_text import last_message_line
 
@@ -128,26 +127,3 @@ def finished_turns(previous: Dict[str, str], current: Iterable[SessionInfo]) -> 
         if previous.get(info.key) == WORKING and info.state != WORKING:
             ended.append(info)
     return ended
-
-
-def last_reply_from_tail(path: Path, max_bytes: int = 512 * 1024) -> str:
-    """The most recent reply in a transcript, reading only its last part.
-
-    Transcripts can be tens of megabytes; the last reply is near the end. The
-    first (probably partial) line of the tail is dropped.
-    """
-    try:
-        size = os.path.getsize(path)
-        with open(path, "rb") as handle:
-            start = max(0, size - max_bytes)
-            handle.seek(start)
-            data = handle.read()
-    except OSError:
-        return ""
-    lines = split_jsonl(data)
-    if start > 0 and lines:
-        lines = lines[1:]
-    parser = TranscriptParser()
-    parser.feed(lines)
-    reply = parser.transcript.last_reply()
-    return reply.text if reply else ""

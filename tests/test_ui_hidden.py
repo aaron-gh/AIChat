@@ -8262,12 +8262,11 @@ def test_session_properties_without_a_transcript(frame, env, monkeypatch):
 
 
 def test_session_properties_survive_a_failing_read(frame, env, monkeypatch):
-    from thechatplace.ui import main_frame
     add_transcript(env, "C:\\G\\Repo", "cli-a", [user_text("Hi")])
 
     def broken(path):
         raise OSError("locked")
-    monkeypatch.setattr(main_frame, "read_transcript", broken)
+    monkeypatch.setattr(frame.sessions, "read", broken)
     seen = _properties(frame, monkeypatch)
     select(frame, "Quiet one")
     _alt_enter(frame, monkeypatch, frame.session_list)
@@ -8280,15 +8279,14 @@ def test_session_properties_survive_a_failing_read(frame, env, monkeypatch):
 
 
 def test_a_second_alt_enter_while_reading_is_ignored(frame, env, monkeypatch):
-    from thechatplace.ui import main_frame
     add_transcript(env, "C:\\G\\Repo", "cli-a", [user_text("Hi")])
     release = threading.Event()
-    real = main_frame.read_transcript
+    real = frame.sessions.read
 
     def slow(path):
         release.wait(5)
         return real(path)
-    monkeypatch.setattr(main_frame, "read_transcript", slow)
+    monkeypatch.setattr(frame.sessions, "read", slow)
     seen = _properties(frame, monkeypatch)
     select(frame, "Quiet one")
     _alt_enter(frame, monkeypatch, frame.session_list)

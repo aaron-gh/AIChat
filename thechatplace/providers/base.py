@@ -6,6 +6,7 @@ from typing import Dict, List, Protocol, Set
 
 from ..desktop_groups import DesktopGroups
 from ..sessions import LiveStatus, SessionInfo
+from ..transcript import Transcript
 
 
 @dataclass
@@ -25,4 +26,24 @@ class SessionProvider(Protocol):
 
     def collect(self) -> Snapshot:
         """Return discovery results without starting or resuming a turn."""
+        ...
+
+
+class ConversationReader(Protocol):
+    @property
+    def transcript(self) -> Transcript:
+        ...
+
+    def refresh(self) -> bool:
+        """Update readable history without starting a turn."""
+        ...
+
+
+class ConversationProvider(Protocol):
+    provider_id: str
+
+    def open_reader(self, session: SessionInfo) -> ConversationReader | None:
+        ...
+
+    def last_reply(self, session: SessionInfo) -> str:
         ...

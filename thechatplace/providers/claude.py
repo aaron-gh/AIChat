@@ -4,6 +4,10 @@ Keeps desktop ownership guards, terminal deduplication and live state intact.
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
+from ..transcript import TranscriptReader, TranscriptParser, split_jsonl
 from .. import platform_paths
 from ..desktop_groups import load_desktop_groups
 from ..sessions import (NEEDS_YOU, TERMINAL, WORKING, DesktopLoadResult,
@@ -75,3 +79,42 @@ class ClaudeProvider:
                         live=live,
                         unreadable_files=desktop.unreadable_files,
                         desktop_groups=load_desktop_groups(folders))
+
+
+class ClaudeConversations:
+    provider_id = "claude"
+
+    def open_reader(self, session):
+        if session.provider != self.provider_id:
+            raise ValueError("Not a Claude session")
+        path = session.transcript_path()
+        return TranscriptReader(path) if path is not None else None
+
+    def last_reply(self, session) -> str:
+        if session.provider != self.provider_id:
+            raise ValueError("Not a Claude session")
+        path = session.transcript_path()
+        return last_reply_from_tail(path) if path is not None else ""
+
+
+def last_reply_from_tail(path: Path, max_bytes: int = 512 * 1024) -> str:
+    """The most recent reply in a transcript, reading only its last part.
+
+    Transcripts can be tens of megabytes; the last reply is near the end. The
+    first (probably partial) line of the tail is dropped.
+    """
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as handle:
+            start = max(0, size - max_bytes)
+            handle.seek(start)
+            data = handle.read()
+    except OSError:
+        return ""
+    lines = split_jsonl(data)
+    if start > 0 and lines:
+        lines = lines[1:]
+    parser = TranscriptParser()
+    parser.feed(lines)
+    reply = parser.transcript.last_reply()
+    return reply.text if reply else ""
