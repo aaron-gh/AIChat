@@ -15,3 +15,4 @@ shipped.
 | Note | Issue |
 |---|---|
 | [speech-routing.md](speech-routing.md): how The Chat Place chooses what speaks, why NVDA users hear a Windows voice, and the options for fixing it | #98 |
+| [codex-integration-plan.md](codex-integration-plan.md): the provider boundary, unified chat list and staged Codex integration | #184, #171 |

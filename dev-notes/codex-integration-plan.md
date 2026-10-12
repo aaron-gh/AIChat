@@ -1,5 +1,7 @@
 # Codex in The Chat Place: project review and implementation plan
 
+Issues: #184 (additional providers) and #171 (shared session architecture).
+
 Reviewed October 11, 2026 against `origin/main` at
 `08473e38a6860d73447a4a0a3b3fcbe75a8f2d73`.
 Requirements: [issue #184](https://github.com/TheIdeaPlace/AIChat/issues/184).
@@ -168,15 +170,13 @@ No application code changed. `git diff --check` passed. The initial baseline
 suite produced 831 passes, 69 skips and 502 setup errors, beginning with
 wxPython being unable to access the Mac display. A retry outside the sandbox
 also failed and aborted with exit 134 and a pthread diagnostic. A clean full
-baseline was initially unverified. Retry output is saved locally
-at `/private/tmp/aichat-codex-baseline.txt`.
+baseline was initially unverified.
 
 Resolved on October 11: GUI tests run with desktop access outside the sandbox;
 all GUI modules now use one session-scoped `wx.App`, and the DPI test respects
 macOS logical window coordinates on Retina screens. No application code needed
 changing for these fixes. The full suite subsequently completed with 1,337
 passes, 69 platform-specific skips and exit code 0, without a native crash.
-Output: `/private/tmp/aichat-gui-fixed.txt`.
 
 ## Implementation progress
 
@@ -204,7 +204,7 @@ window layout, Claude wording and session keys are retained.
 Six new tests cover backend routing with colliding IDs, unavailable and duplicate
 providers, missing history, read-only Claude history access and rejection of
 foreign chats by the Claude adapter. Full-suite validation: 1,343 passed,
-69 skipped, exit code 0. Log: `/private/tmp/aichat-reader-routing.txt`.
+69 skipped, exit code 0.
 Remaining reader work includes cross-session Find, backend-neutral message
 labels and history availability checks; turn routing and Codex execution are
 still pending. The installed local CLI reports `0.162.0-alpha.17.2`; its
