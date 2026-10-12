@@ -588,6 +588,12 @@ Toolkit's do. Each replaces an existing `.venv`.
 `python -m thechatplace` works on Windows too. A copy run from source doesn't update itself; Help, Check
 for Updates says so, and names the newest release.
 
+On macOS, run the GUI tests from a terminal in your logged-in desktop session.
+They need access to the display even though their windows stay hidden. When
+running through Codex, allow the test command to run outside its sandbox;
+otherwise wxPython may report that it cannot access the screen. The test suite
+keeps one shared `wx.App` alive for all GUI modules.
+
 ### Build it yourself
 
 The build scripts are in `BuildAndRelease/`, laid out as in Image Description Toolkit:

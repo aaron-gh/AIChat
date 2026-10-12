@@ -9,11 +9,6 @@ import wx.adv  # noqa: E402
 from thechatplace.ui import notify  # noqa: E402
 
 
-@pytest.fixture(scope="module")
-def app():
-    return wx.GetApp() or wx.App(False)
-
-
 class FakeIcon:
     made = []
 

@@ -26,12 +26,6 @@ from fake_env import (FAKE_COMMANDS, FakeRunner, add_desktop, add_transcript,  #
                       now_ms, pump)
 
 
-@pytest.fixture(scope="module")
-def app():
-    instance = wx.App(False)
-    yield instance
-
-
 @pytest.fixture
 def env(tmp_path, monkeypatch, app):
     return fake_env.install(tmp_path, monkeypatch.setattr)

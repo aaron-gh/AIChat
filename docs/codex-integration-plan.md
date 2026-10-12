@@ -168,9 +168,15 @@ No application code changed. `git diff --check` passed. The initial baseline
 suite produced 831 passes, 69 skips and 502 setup errors, beginning with
 wxPython being unable to access the Mac display. A retry outside the sandbox
 also failed and aborted with exit 134 and a pthread diagnostic. A clean full
-baseline therefore remains unverified and must be established in the supported
-GUI test environment before the Claude refactor. Retry output is saved locally
+baseline was initially unverified. Retry output is saved locally
 at `/private/tmp/aichat-codex-baseline.txt`.
+
+Resolved on October 11: GUI tests run with desktop access outside the sandbox;
+all GUI modules now use one session-scoped `wx.App`, and the DPI test respects
+macOS logical window coordinates on Retina screens. No application code needed
+changing for these fixes. The full suite subsequently completed with 1,337
+passes, 69 platform-specific skips and exit code 0, without a native crash.
+Output: `/private/tmp/aichat-gui-fixed.txt`.
 
 ## Implementation progress
 
@@ -183,7 +189,7 @@ or desktop links.
 
 Focused validation: 207 tests passed across provider routing, sessions, terminal
 and Cowork discovery, last messages, activity, stores, groups, hidden sessions
-and titles. The full GUI suite remains subject to the baseline limitation above.
+and titles. The subsequent full-suite run passed as recorded above.
 This is the beginning of phase 2's Claude boundary, not completion of that phase:
 reader and turn routing, the controller, persistence migration and Codex support
 remain to be implemented. No Codex UI option is enabled yet.
