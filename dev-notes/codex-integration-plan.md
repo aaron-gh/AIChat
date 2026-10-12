@@ -14,8 +14,8 @@ automatically selects its backend for reading, replying, stopping and answering
 requests. New Session adds a provider choice, remembered for the next new chat.
 Provider filters are optional conveniences, not separate windows.
 
-This branch contains the review and plan only. Implement in small, independently
-reviewable changes on feature branches; leave the shipping branch unchanged.
+Implementation stays on the separate feature branch. Keep changes small and
+independently reviewable; leave the shipping branch unchanged.
 
 ## What the current code tells us
 
@@ -210,3 +210,41 @@ labels and history availability checks; turn routing and Codex execution are
 still pending. The installed local CLI reports `0.162.0-alpha.17.2`; its
 app-server has stdio and schema-generation commands. Compatibility with a
 released CLI remains to be verified before selecting a supported minimum.
+
+## Reviewed checkpoints on October 12
+
+The reader boundary now covers cross-session Find, backend-specific assistant
+labels, properties and unloaded exports without requiring Claude files.
+Reader construction runs on a worker thread. Generation checks preserve the
+current session when an older factory finishes; tests cover both successful
+and missing stale readers. Two older GUI tests now wait for the asynchronous
+load announcement rather than depending on callback timing.
+
+Independent review found no Claude regression in the foundation or reader
+changes. It suggested the stale-reader tests, which were added. This is still
+a checkpoint within the Claude-boundary phase: turn routing, capabilities,
+provider-aware persistence and last-message cache routing remain outstanding.
+
+A read-only `CodexProvider` now converts protocol session summaries and history
+through an injected, initialized RPC connection. It lists all pages and archived
+chats, excludes child chats, distinguishes unavailable runtime status from idle,
+and reads history without resuming. Synthetic fixtures follow the generated
+`0.162.0-alpha.17.2` schema. The adapter is not yet registered in the window.
+
+Independent review identified partial-history acceptance and omitted MCP
+outputs. Both were fixed and re-reviewed: partial/paginated history fails with
+an explicit error until pagination is supported; tool activity preserves MCP
+text/errors and file diffs. The follow-up review reported no blocking findings.
+
+The development-only `tools/probe_codex.py` verified the local stdio handshake,
+ChatGPT account type and listing of five active chats, zero archived chats.
+It prints aggregate counts only, sends no prompts and reads no message bodies.
+The reviewer checked its cleanup/privacy logic but did not repeat the real probe.
+Windows executable discovery, cross-client status fidelity, paginated history,
+forking and subscription execution still need compatibility checks.
+
+Validation for these checkpoints: 1,361 tests passed, 69 platform-specific tests
+skipped, process exited successfully. The independent reviewer also ran the
+33 focused adapter/search/controller tests successfully. No new dialogs or
+Codex controls are enabled. The Windows visual-probe gate remains part of the
+later UI phase; no screenshot comparison was performed for this checkpoint.
