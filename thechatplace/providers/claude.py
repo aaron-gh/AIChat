@@ -84,6 +84,11 @@ class ClaudeProvider:
 class ClaudeConversations:
     provider_id = "claude"
 
+    def has_history(self, session) -> bool:
+        if session.provider != self.provider_id:
+            raise ValueError("Not a Claude session")
+        return session.transcript_path() is not None
+
     def open_reader(self, session):
         if session.provider != self.provider_id:
             raise ValueError("Not a Claude session")

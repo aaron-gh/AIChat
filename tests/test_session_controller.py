@@ -28,6 +28,9 @@ class FakeProvider:
         self.seen.append(session.identity)
         return self.reader
 
+    def has_history(self, session):
+        return True
+
     def last_reply(self, session):
         self.seen.append(session.identity)
         return self.reader.transcript.messages[-1].text
@@ -66,6 +69,7 @@ def test_missing_claude_history_returns_none(monkeypatch):
     monkeypatch.setattr(SessionInfo, "transcript_path", lambda self: None)
     controller = SessionController([ClaudeConversations()])
     assert controller.read(info()) is None
+    assert not controller.has_history(info())
     assert controller.last_reply(info()) == ""
 
 

@@ -1464,31 +1464,39 @@ class MainFrame(wx.Frame):
         if info is None or self._reader_busy:
             return
         generation = self._open_generation
-        if self._reader is None:
-            try:
-                self._reader = self.sessions.open_reader(info)
-            except Exception as exc:
-                self._apply_chat(generation, False, [], 0, exc)
-                return
-            if self._reader is None:
-                self._show_missing_transcript(info)
-                return
         reader = self._reader
         self._reader_busy = True
 
         def work():
             try:
-                changed = reader.refresh()
-                transcript = reader.transcript
-                copies = [ChatMessage(m.kind, m.text, m.timestamp, m.key, m.sender)
-                          for m in transcript.messages]
-                wx.CallAfter(self._apply_chat, generation, changed, copies,
+                active_reader = reader if reader is not None else self.sessions.open_reader(info)
+                if active_reader is None:
+                    wx.CallAfter(self._missing_reader, generation)
+                    return
+                changed = active_reader.refresh()
+                transcript = active_reader.transcript
+                copies = [dataclasses.replace(m) for m in transcript.messages]
+                wx.CallAfter(self._apply_reader_chat, generation, active_reader, changed, copies,
                              transcript.unreadable_lines, None,
                              list(transcript.edits), transcript.turns)
             except Exception as exc:  # noqa: BLE001
                 wx.CallAfter(self._apply_chat, generation, False, [], 0, exc)
 
         self._pool.submit(work)
+
+    def _missing_reader(self, generation):
+        self._reader_busy = False
+        if self._gone() or self._open is None:
+            return
+        if generation != self._open_generation:
+            self._refresh_chat()
+            return
+        self._show_missing_transcript(self._open)
+
+    def _apply_reader_chat(self, generation, reader, *result):
+        if not self._gone() and generation == self._open_generation:
+            self._reader = reader
+        self._apply_chat(generation, *result)
 
     def _show_missing_transcript(self, info: SessionInfo):
         if self._chat_loaded:
@@ -1917,8 +1925,7 @@ class MainFrame(wx.Frame):
                 found = info.transcript_path()
                 if found is not None:
                     path, size = properties.transcript_facts(found)
-                    if path:
-                        transcript = self.sessions.read(info)
+                transcript = self.sessions.read(info)
             except Exception as exc:  # noqa: BLE001 - say what can be said without it
                 transcript, error = None, str(exc) or type(exc).__name__
             wx.CallAfter(self._session_properties_read, info, transcript, path, size, error,
@@ -2171,12 +2178,12 @@ class MainFrame(wx.Frame):
 
     def _export_source(self, info: SessionInfo):
         """What to export: the loaded session's messages as the list shows
-        them, or the path of another session's transcript (read later, off
-        the window's thread). (messages, None), (None, path), or (None, None)
-        when there's nothing on disk."""
+        them, or another session's identity (read later through its backend,
+        off the window's thread). (messages, None), (None, session), or
+        (None, None) when the backend has no history."""
         if self._open is not None and info.key == self._open.key and self._chat_loaded:
             return [m for m in self._visible_messages() if m.kind != QUEUED], None
-        return None, info.transcript_path()
+        return None, info if self.sessions.has_history(info) else None
 
     def on_export(self):
         """File, Export Session (Ctrl+E): save the conversation as
@@ -4032,7 +4039,8 @@ class MainFrame(wx.Frame):
             info = self._current_info(key)
             if info is not None:
                 targets.append(Target(info.key, info.title, info.transcript_path,
-                                      info.key in self.tool_activity))
+                                      info.key in self.tool_activity,
+                                      lambda session=info: self.sessions.read(session)))
         if not targets:
             self._feedback("No sessions in the list to search.")
             return

@@ -29,6 +29,9 @@ class SessionController:
     def open_reader(self, session: SessionInfo) -> ConversationReader | None:
         return self._provider(session).open_reader(session)
 
+    def has_history(self, session: SessionInfo) -> bool:
+        return self._provider(session).has_history(session)
+
     def read(self, session: SessionInfo) -> Transcript | None:
         reader = self.open_reader(session)
         if reader is None:

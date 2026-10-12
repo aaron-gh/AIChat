@@ -42,6 +42,10 @@ class ConversationReader(Protocol):
 class ConversationProvider(Protocol):
     provider_id: str
 
+    def has_history(self, session: SessionInfo) -> bool:
+        """Check local availability without network requests or inference."""
+        ...
+
     def open_reader(self, session: SessionInfo) -> ConversationReader | None:
         ...
 
